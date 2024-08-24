@@ -5,38 +5,25 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 
-'''
-Atributos numericos que deberian ser discretizados:
-
-no parecen ser utiles para predecir:
-    pidnum
-    time
-
-parecen ser utiles para predecir:
-    age
-    wtkg
-    karnof
-    preanti
-    cd40
-    cd420
-    cd80
-    cd820
-
-'''
-
 DATASET_FILE = "data.csv"
 OBJETIVO = 'cid'
 
 class ArbolDecision:
 
+    def __init__(self):
+        self.arbol = None
+
     @staticmethod
-    def ID3(X, Y):
+    
+    def ID3(X, Y, funcion_seleccion_atributo):
         '''
         Genera un arbol de decision a partir de los datos X y Y.
         los nodos tienen 3 atributos
         label: Nombre del atributo a comparar, en caso de haber llegado a una hoja, es None, en caso de ser la raiz, es el atributo con mayor ganancia
         children: Lista de pares (valor, nodo) donde valor es el valor del atributo a comparar y nodo es el subarbol que se debe seguir
-        result: En caso de ser una hoja, es el resultado final predicho de la clasificacion, en caso de ser un nodo, es None
+        result: En caso de ser una hoja, es el resultado final predicho de la clasificacion, en caso de ser un nodo intermedio, es None
+
+        funcion_seleccion_atributo 
         '''
 
         valores_unicos = Y.unique()
@@ -47,7 +34,7 @@ class ArbolDecision:
         if len(valores_unicos) == 1:
             return {'label': None, 'children': None, 'result' : valores_unicos[0]}
         
-        mejor_atributo = get_mejor_atributo(X, Y)
+        mejor_atributo = get_mejor_atributo(X, Y, funcion_seleccion_atributo)
 
         if mejor_atributo is None:
             return {'label': None, 'children': None, 'result': 0}
@@ -56,7 +43,7 @@ class ArbolDecision:
         for valor in X[mejor_atributo].unique():
             subset_X = X[X[mejor_atributo] == valor].drop(columns=[mejor_atributo])
             subset_Y = Y[X[mejor_atributo] == valor]
-            children.append((valor, ArbolDecision.ID3(subset_X, subset_Y)))
+            children.append((valor, ArbolDecision.ID3(subset_X, subset_Y, funcion_seleccion_atributo)))
 
         return {
             'label': mejor_atributo,
@@ -65,8 +52,8 @@ class ArbolDecision:
         }
 
 
-    def entrenar(self, X, Y):
-        self.arbol = ArbolDecision.ID3(X, Y)
+    def entrenar(self, X, Y, funcion_seleccion_atributo):
+        self.arbol = ArbolDecision.ID3(X, Y, funcion_seleccion_atributo)
     
     @staticmethod
     def predecir_entrada(arbol, X):
@@ -88,6 +75,9 @@ class ArbolDecision:
         '''
         Predice el resultado de X utilizando el arbol de decision
         '''
+        if self.arbol is None:
+            raise Exception("El arbol no ha sido entrenado, por lo que no puede predecir")
+            
         Y_predicho = []
         for i in range(len(X)):
             Y_predicho.append(ArbolDecision.predecir_entrada(self.arbol, X.iloc[i]))
@@ -174,23 +164,37 @@ def get_entropia_atributo(X, Y, atributo):
     return entropia
 
 
-def get_mejor_atributo(X, Y):
-    ganancia_max = None
+def get_mejor_atributo(X, Y, funcion_seleccion_atributo):
+    entropia_maxima = None
+    gain_ratio_maximo = None
     mejor_atributo = None
 
     entropia = get_entropia(Y)
 
     for atributo in X.columns:
-        ganancia_actual = entropia - get_entropia_atributo(X, Y, atributo)
-        if (mejor_atributo == None or ganancia_actual > ganancia_max):
-            ganancia_max = ganancia_actual
+        
+        split_information = 0
+        for valor in X[atributo].unique():
+            split_information -= (len(X[X[atributo] == valor]) / len(X)) * math.log2(len(X[X[atributo] == valor]) / len(X))
+
+        entropia_atributo = entropia - get_entropia_atributo(X, Y, atributo)
+
+        gain_ratio = entropia_atributo / split_information if split_information != 0 else 0
+
+
+        if (funcion_seleccion_atributo == 'entropia' and (mejor_atributo == None or entropia_atributo > entropia_maxima)):
+            entropia_maxima = entropia_atributo
             mejor_atributo = atributo
+        elif (funcion_seleccion_atributo == 'gain_ratio' and (mejor_atributo == None or gain_ratio > gain_ratio_maximo)):
+            gain_ratio_maximo = gain_ratio
+            mejor_atributo = atributo
+
 
     return mejor_atributo
 
-dataset = pd.read_csv(DATASET_FILE)
+dataset = pd.read_csv(DATASET_FILE).drop(columns=['pidnum'])
 
-dataset_discretizado = discretizar_atributos(dataset.copy(), ['pidnum', 'time', 'age', 'wtkg', 'karnof', 'preanti', 'cd40', 'cd420', 'cd80', 'cd820'], 3)
+dataset_discretizado = discretizar_atributos(dataset.copy(), ['time', 'age', 'wtkg', 'karnof', 'preanti', 'cd40', 'cd420', 'cd80', 'cd820'], 2)
 
 #Todo esto de aca abajo moverlo al informe
 
@@ -200,20 +204,20 @@ Y_manual = dataset_discretizado[OBJETIVO].copy()
 X_librerias = dataset.copy().drop(columns=[OBJETIVO])
 Y_librerias = dataset[OBJETIVO].copy()
 
-X_train, X_test, Y_train, Y_test = train_test_split(X_manual, Y_manual, test_size=0.15, random_state = 12345)
-X_train_librerias, X_test_librerias, Y_train_librerias, Y_test_librerias = train_test_split(X_librerias, Y_librerias, test_size=0.15, random_state=12345)
+X_train, X_test, Y_train, Y_test = train_test_split(X_manual, Y_manual, test_size = 0.15, random_state = 12345)
+X_train_librerias, X_test_librerias, Y_train_librerias, Y_test_librerias = train_test_split(X_librerias, Y_librerias, test_size = 0.15, random_state = 12345)
 
 ArbolDecisionManual = ArbolDecision()
-ArbolDecisionManual.entrenar(X_train, Y_train)
+ArbolDecisionManual.entrenar(X_train, Y_train, 'impurity_reduction')
 Y_predicho_manual = ArbolDecisionManual.predecir(X_test)
 presicion_manual = accuracy_score(Y_test, Y_predicho_manual)
 
-ArbolDecisionLibreria = DecisionTreeClassifier(criterion='entropy')
+ArbolDecisionLibreria = DecisionTreeClassifier(criterion='entropy', random_state=12345)
 ArbolDecisionLibreria.fit(X_train_librerias, Y_train_librerias)
 Y_predicho_arbol_libreria = ArbolDecisionLibreria.predict(X_test_librerias)
 precision_arbol_libreria = accuracy_score(Y_test_librerias, Y_predicho_arbol_libreria)
 
-RandomForest = RandomForestClassifier(criterion='entropy')
+RandomForest = RandomForestClassifier(criterion='entropy', random_state=12345)
 RandomForest.fit(X_train_librerias, Y_train_librerias)
 Y_predicho_random_forest = RandomForest.predict(X_test_librerias)
 presicion_random_forest = accuracy_score(Y_test_librerias, Y_predicho_random_forest)

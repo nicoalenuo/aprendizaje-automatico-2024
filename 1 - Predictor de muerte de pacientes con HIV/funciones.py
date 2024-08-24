@@ -14,7 +14,6 @@ class ArbolDecision:
         self.arbol = None
 
     @staticmethod
-    
     def ID3(X, Y, funcion_seleccion_atributo):
         '''
         Genera un arbol de decision a partir de los datos X y Y.
@@ -34,7 +33,7 @@ class ArbolDecision:
         if len(valores_unicos) == 1:
             return {'label': None, 'children': None, 'result' : valores_unicos[0]}
         
-        mejor_atributo = get_mejor_atributo(X, Y, funcion_seleccion_atributo)
+        mejor_atributo = funcion_seleccion_atributo(X, Y)
 
         if mejor_atributo is None:
             return {'label': None, 'children': None, 'result': 0}
@@ -83,6 +82,36 @@ class ArbolDecision:
             Y_predicho.append(ArbolDecision.predecir_entrada(self.arbol, X.iloc[i]))
         
         return Y_predicho
+    
+# --------------------------------------------
+# Funciones de entropía
+# --------------------------------------------
+
+def get_entropia(Y):
+    cantidad_unicos = Y.unique()
+    total = len(Y)
+    entropia = 0
+
+    for unico in cantidad_unicos:
+        cantidad = len(Y[Y == unico])
+        entropia -= (cantidad / total) * (math.log2(cantidad / total) if cantidad != 0 else 0)
+
+    return entropia
+
+def get_entropia_atributo(X, Y, atributo):
+    valores_unicos = X[atributo].unique()
+    total = len(X)
+    entropia = 0
+
+    for unico in valores_unicos:
+        cantidad = len(X[X[atributo] == unico])
+        entropia += (cantidad / total) * get_entropia(Y[X[atributo] == unico])
+
+    return entropia
+
+# --------------------------------------------
+# Funciones para discretizar atributos
+# --------------------------------------------
 
 def calcular_ganancia_informacion(X, Y, punto_corte):
     """
@@ -105,6 +134,8 @@ def calcular_ganancia_informacion(X, Y, punto_corte):
 def discretizar_atributo_por_resultado(X, Y, max_range_split):
     """
     Discretiza un atributo X con respecto al resultado Y, maximizando la pureza de las particiones
+    Para esto, calcula la ganancia de información al dividir el atributo en todos los puntos de corte posibles
+    y selecciona los max_range_split - 1 puntos de corte que maximizan la ganancia de información
     """
     puntos_corte = []
     valores_unicos = sorted(X.unique())
@@ -141,31 +172,34 @@ def discretizar_atributos(dataset, atributos, max_range_split):
     
     return dataset_discretizado
 
-def get_entropia(Y):
-    cantidad_unicos = Y.unique()
-    total = len(Y)
-    entropia = 0
+# --------------------------------------------
+# Funciones de selección de atributo
+# --------------------------------------------
 
-    for unico in cantidad_unicos:
-        cantidad = len(Y[Y == unico])
-        entropia -= (cantidad / total) * (math.log2(cantidad / total) if cantidad != 0 else 0)
-
-    return entropia
-
-def get_entropia_atributo(X, Y, atributo):
-    valores_unicos = X[atributo].unique()
-    total = len(X)
-    entropia = 0
-
-    for unico in valores_unicos:
-        cantidad = len(X[X[atributo] == unico])
-        entropia += (cantidad / total) * get_entropia(Y[X[atributo] == unico])
-
-    return entropia
-
-
-def get_mejor_atributo(X, Y, funcion_seleccion_atributo):
+def get_mejor_atributo_entropia(X, Y):
+    '''
+    Devuelve el mejor atributo para dividir el dataset en función de la entropía
+    '''
     entropia_maxima = None
+    mejor_atributo = None
+
+    entropia = get_entropia(Y)
+
+    for atributo in X.columns:
+
+        entropia_atributo = entropia - get_entropia_atributo(X, Y, atributo)
+
+        if (mejor_atributo == None or entropia_atributo > entropia_maxima):
+            entropia_maxima = entropia_atributo
+            mejor_atributo = atributo
+
+
+    return mejor_atributo
+
+def get_mejor_atributo_gain_ratio(X, Y):
+    '''
+    Devuelve el mejor atributo para dividir el dataset en función del gain ratio
+    '''
     gain_ratio_maximo = None
     mejor_atributo = None
 
@@ -181,22 +215,53 @@ def get_mejor_atributo(X, Y, funcion_seleccion_atributo):
 
         gain_ratio = entropia_atributo / split_information if split_information != 0 else 0
 
-
-        if (funcion_seleccion_atributo == 'entropia' and (mejor_atributo == None or entropia_atributo > entropia_maxima)):
-            entropia_maxima = entropia_atributo
-            mejor_atributo = atributo
-        elif (funcion_seleccion_atributo == 'gain_ratio' and (mejor_atributo == None or gain_ratio > gain_ratio_maximo)):
+        if (mejor_atributo == None or gain_ratio > gain_ratio_maximo):
             gain_ratio_maximo = gain_ratio
             mejor_atributo = atributo
 
+    return mejor_atributo
+
+def get_gini_atributo(X, Y, atributo):
+    '''
+    Devuelve el gini de un atributo
+    '''
+
+    valores_unicos = X[atributo].unique()
+    total = len(X)
+    gini = 0
+
+    for unico in valores_unicos:
+        cantidad = len(X[X[atributo] == unico])
+        gini += (cantidad / total) * (1 - (len(Y[X[atributo] == unico][Y == 1]) / cantidad) ** 2 - (len(Y[X[atributo] == unico][Y == 0]) / cantidad) ** 2)
+
+    return gini
+
+def get_mejor_atributo_impurity_reduction(X, Y):
+    '''
+    Devuelve el mejor atributo para dividir el dataset en función de la reducción de impureza
+    '''
+
+    impurity_reduction_maxima = None
+    mejor_atributo = None
+
+    gini = 1 - (len(Y[Y == 1]) / len(Y)) ** 2 - (len(Y[Y == 0]) / len(Y)) ** 2
+
+    for atributo in X.columns:
+        gini_atributo = gini - get_gini_atributo(X, Y, atributo)
+
+        if (mejor_atributo == None or gini_atributo > impurity_reduction_maxima):
+            impurity_reduction_maxima = gini_atributo
+            mejor_atributo = atributo
 
     return mejor_atributo
+
+# --------------------------------------------
+#Todo esto de aca abajo moverlo al informe
+# --------------------------------------------
 
 dataset = pd.read_csv(DATASET_FILE).drop(columns=['pidnum'])
 
 dataset_discretizado = discretizar_atributos(dataset.copy(), ['time', 'age', 'wtkg', 'karnof', 'preanti', 'cd40', 'cd420', 'cd80', 'cd820'], 2)
-
-#Todo esto de aca abajo moverlo al informe
 
 X_manual = dataset_discretizado.copy().drop(columns=[OBJETIVO])
 Y_manual = dataset_discretizado[OBJETIVO].copy()
@@ -208,7 +273,7 @@ X_train, X_test, Y_train, Y_test = train_test_split(X_manual, Y_manual, test_siz
 X_train_librerias, X_test_librerias, Y_train_librerias, Y_test_librerias = train_test_split(X_librerias, Y_librerias, test_size = 0.15, random_state = 12345)
 
 ArbolDecisionManual = ArbolDecision()
-ArbolDecisionManual.entrenar(X_train, Y_train, 'impurity_reduction')
+ArbolDecisionManual.entrenar(X_train, Y_train, get_mejor_atributo_impurity_reduction)
 Y_predicho_manual = ArbolDecisionManual.predecir(X_test)
 presicion_manual = accuracy_score(Y_test, Y_predicho_manual)
 

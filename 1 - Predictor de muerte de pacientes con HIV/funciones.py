@@ -3,7 +3,7 @@ import math
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import  accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 
 DATASET_FILE = "data.csv"
 OBJETIVO = 'cid'
@@ -21,8 +21,6 @@ class ArbolDecision:
         label: Nombre del atributo a comparar, en caso de haber llegado a una hoja, es None, en caso de ser la raiz, es el atributo con mayor ganancia
         children: Lista de pares (valor, nodo) donde valor es el valor del atributo a comparar y nodo es el subarbol que se debe seguir
         result: En caso de ser una hoja, es el resultado final predicho de la clasificacion, en caso de ser un nodo intermedio, es None
-
-        funcion_seleccion_atributo 
         '''
 
         valores_unicos = Y.unique()
@@ -52,6 +50,9 @@ class ArbolDecision:
 
 
     def entrenar(self, X, Y, funcion_seleccion_atributo):
+        if (funcion_seleccion_atributo not in [get_mejor_atributo_entropia, get_mejor_atributo_gain_ratio, get_mejor_atributo_impurity_reduction]):
+            raise Exception("La funcion de seleccion de atributo no es valida")
+
         self.arbol = ArbolDecision.ID3(X, Y, funcion_seleccion_atributo)
     
     @staticmethod
@@ -88,11 +89,11 @@ class ArbolDecision:
 # --------------------------------------------
 
 def get_entropia(Y):
-    cantidad_unicos = Y.unique()
+    valores_unicos = Y.unique()
     total = len(Y)
     entropia = 0
 
-    for unico in cantidad_unicos:
+    for unico in valores_unicos:
         cantidad = len(Y[Y == unico])
         entropia -= (cantidad / total) * (math.log2(cantidad / total) if cantidad != 0 else 0)
 
@@ -255,38 +256,64 @@ def get_mejor_atributo_impurity_reduction(X, Y):
 
     return mejor_atributo
 
+
+# --------------------------------------------
+# Funciones de medidas
+# --------------------------------------------
+
+def get_accuracy_precision_recall_f1(Y_real, Y_predicho, objetivo=0):
+    """
+    Calcula la accuracy, precision, recall y f1
+    """
+    accuracy  = accuracy_score(Y_real, Y_predicho)
+    precision = precision_score(Y_real, Y_predicho, pos_label=objetivo)
+    recall    = recall_score(Y_real, Y_predicho, pos_label=objetivo)
+    f1        = f1_score(Y_real, Y_predicho, pos_label=objetivo)
+
+    return accuracy, precision, recall, f1
+
+#Tal vez se puede borrar y llamar direcamente a confusion_matrix porque esto ajshdja yo puse esto aca para "modularizar" o algo
+def get_matriz_de_confusion(Y_real, Y_predicho):
+    """
+    Calcula la matriz de confusión
+    """
+    return confusion_matrix(Y_real, Y_predicho)
+
 # --------------------------------------------
 #Todo esto de aca abajo moverlo al informe
 # --------------------------------------------
 
-dataset = pd.read_csv(DATASET_FILE).drop(columns=['pidnum'])
+if (__name__ == "__main__"):
+    dataset = pd.read_csv(DATASET_FILE).drop(columns=['pidnum'])
 
-dataset_discretizado = discretizar_atributos(dataset.copy(), ['time', 'age', 'wtkg', 'karnof', 'preanti', 'cd40', 'cd420', 'cd80', 'cd820'], 2)
+    dataset_discretizado = discretizar_atributos(dataset.copy(), ['time', 'age', 'wtkg', 'karnof', 'preanti', 'cd40', 'cd420', 'cd80', 'cd820'], 2)
 
-X_manual = dataset_discretizado.copy().drop(columns=[OBJETIVO])
-Y_manual = dataset_discretizado[OBJETIVO].copy()
+    X_manual = dataset_discretizado.copy().drop(columns=[OBJETIVO])
+    Y_manual = dataset_discretizado[OBJETIVO].copy()
 
-X_librerias = dataset.copy().drop(columns=[OBJETIVO])
-Y_librerias = dataset[OBJETIVO].copy()
+    X_librerias = dataset.copy().drop(columns=[OBJETIVO])
+    Y_librerias = dataset[OBJETIVO].copy()
 
-X_train, X_test, Y_train, Y_test = train_test_split(X_manual, Y_manual, test_size = 0.15, random_state = 12345)
-X_train_librerias, X_test_librerias, Y_train_librerias, Y_test_librerias = train_test_split(X_librerias, Y_librerias, test_size = 0.15, random_state = 12345)
+    X_train, X_test, Y_train, Y_test = train_test_split(X_manual, Y_manual, test_size = 0.15, random_state = 12345)
+    X_train_librerias, X_test_librerias, Y_train_librerias, Y_test_librerias = train_test_split(X_librerias, Y_librerias, test_size = 0.3, random_state = 12345)
 
-ArbolDecisionManual = ArbolDecision()
-ArbolDecisionManual.entrenar(X_train, Y_train, get_mejor_atributo_impurity_reduction)
-Y_predicho_manual = ArbolDecisionManual.predecir(X_test)
-presicion_manual = accuracy_score(Y_test, Y_predicho_manual)
+    ArbolDecisionManual = ArbolDecision()
+    ArbolDecisionManual.entrenar(X_train, Y_train, get_mejor_atributo_gain_ratio)
+    Y_predicho_manual = ArbolDecisionManual.predecir(X_test)
+    presicion_manual = accuracy_score(Y_test, Y_predicho_manual)
 
-ArbolDecisionLibreria = DecisionTreeClassifier(criterion='entropy', random_state=12345)
-ArbolDecisionLibreria.fit(X_train_librerias, Y_train_librerias)
-Y_predicho_arbol_libreria = ArbolDecisionLibreria.predict(X_test_librerias)
-precision_arbol_libreria = accuracy_score(Y_test_librerias, Y_predicho_arbol_libreria)
+    ArbolDecisionLibreria = DecisionTreeClassifier(criterion='entropy', random_state=12345)
+    ArbolDecisionLibreria.fit(X_train_librerias, Y_train_librerias)
+    Y_predicho_arbol_libreria = ArbolDecisionLibreria.predict(X_test_librerias)
+    precision_arbol_libreria = accuracy_score(Y_test_librerias, Y_predicho_arbol_libreria)
 
-RandomForest = RandomForestClassifier(criterion='entropy', random_state=12345)
-RandomForest.fit(X_train_librerias, Y_train_librerias)
-Y_predicho_random_forest = RandomForest.predict(X_test_librerias)
-presicion_random_forest = accuracy_score(Y_test_librerias, Y_predicho_random_forest)
+    RandomForest = RandomForestClassifier(criterion='entropy', random_state=12345)
+    RandomForest.fit(X_train_librerias, Y_train_librerias)
+    Y_predicho_random_forest = RandomForest.predict(X_test_librerias)
+    presicion_random_forest = accuracy_score(Y_test_librerias, Y_predicho_random_forest)
 
-print(f"Presicion del arbol de decision manual: {presicion_manual}")
-print(f"Presicion del arbol de decision de libreria: {precision_arbol_libreria}")
-print(f"Presicion del random forest de libreria: {presicion_random_forest}")
+    print(f"Presicion del arbol de decision manual: {presicion_manual}")
+    print(f"Presicion del arbol de decision de libreria: {precision_arbol_libreria}")
+    print(f"Presicion del random forest de libreria: {presicion_random_forest}")
+
+

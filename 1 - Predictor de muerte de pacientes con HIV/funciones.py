@@ -272,13 +272,6 @@ def get_accuracy_precision_recall_f1(Y_real, Y_predicho, objetivo=0):
 
     return accuracy, precision, recall, f1
 
-#Tal vez se puede borrar y llamar direcamente a confusion_matrix porque esto ajshdja yo puse esto aca para "modularizar" o algo
-def get_matriz_de_confusion(Y_real, Y_predicho):
-    """
-    Calcula la matriz de confusión
-    """
-    return confusion_matrix(Y_real, Y_predicho)
-
 # --------------------------------------------
 #Todo esto de aca abajo moverlo al informe
 # --------------------------------------------

@@ -1,9 +1,9 @@
 import pandas as pd
 import math
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
 from sklearn.metrics import  accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+import matplotlib.pyplot as plt
+import numpy as np
+import seaborn as sns
 
 DATASET_FILE = "data.csv"
 OBJETIVO = 'cid'
@@ -78,9 +78,7 @@ class ArbolDecision:
         if self.arbol is None:
             raise Exception("El arbol no ha sido entrenado, por lo que no puede predecir")
             
-        Y_predicho = []
-        for i in range(len(X)):
-            Y_predicho.append(ArbolDecision.predecir_entrada(self.arbol, X.iloc[i]))
+        Y_predicho = [ArbolDecision.predecir_entrada(self.arbol, X.iloc[i]) for i in range(len(X))]
         
         return Y_predicho
     
@@ -258,7 +256,7 @@ def get_mejor_atributo_impurity_reduction(X, Y):
 
 
 # --------------------------------------------
-# Funciones de medidas
+# Funciones de medidas y graficas
 # --------------------------------------------
 
 def get_accuracy_precision_recall_f1(Y_real, Y_predicho, objetivo=0):
@@ -272,41 +270,137 @@ def get_accuracy_precision_recall_f1(Y_real, Y_predicho, objetivo=0):
 
     return accuracy, precision, recall, f1
 
-# --------------------------------------------
-#Todo esto de aca abajo moverlo al informe
-# --------------------------------------------
-
-if (__name__ == "__main__"):
-    dataset = pd.read_csv(DATASET_FILE).drop(columns=['pidnum'])
-
-    dataset_discretizado = discretizar_atributos(dataset.copy(), ['time', 'age', 'wtkg', 'karnof', 'preanti', 'cd40', 'cd420', 'cd80', 'cd820'], 2)
-
-    X_manual = dataset_discretizado.copy().drop(columns=[OBJETIVO])
-    Y_manual = dataset_discretizado[OBJETIVO].copy()
-
-    X_librerias = dataset.copy().drop(columns=[OBJETIVO])
-    Y_librerias = dataset[OBJETIVO].copy()
-
-    X_train, X_test, Y_train, Y_test = train_test_split(X_manual, Y_manual, test_size = 0.15, random_state = 12345)
-    X_train_librerias, X_test_librerias, Y_train_librerias, Y_test_librerias = train_test_split(X_librerias, Y_librerias, test_size = 0.3, random_state = 12345)
+def entrenar_y_evaluar(X, Y, X_val, Y_val):
+    '''
+    Para un conjunto X, Y de entrenamiento, entrena un arbol utilizando las 3 funciones de seleccion de atributo
+    y evalua el arbol en el conjunto de validacion X_val, Y_val
+    '''
+    
+    criterios = {
+        'Entropia': get_mejor_atributo_entropia,
+        'Gain ratio': get_mejor_atributo_gain_ratio,
+        'Impurity reduction': get_mejor_atributo_impurity_reduction
+    }
 
     ArbolDecisionManual = ArbolDecision()
-    ArbolDecisionManual.entrenar(X_train, Y_train, get_mejor_atributo_gain_ratio)
-    Y_predicho_manual = ArbolDecisionManual.predecir(X_test)
-    presicion_manual = accuracy_score(Y_test, Y_predicho_manual)
+    resultados = {}
 
-    ArbolDecisionLibreria = DecisionTreeClassifier(criterion='entropy', random_state=12345)
-    ArbolDecisionLibreria.fit(X_train_librerias, Y_train_librerias)
-    Y_predicho_arbol_libreria = ArbolDecisionLibreria.predict(X_test_librerias)
-    precision_arbol_libreria = accuracy_score(Y_test_librerias, Y_predicho_arbol_libreria)
+    for criterio, funcion_criterio in criterios.items():
+        ArbolDecisionManual.entrenar(X, Y, funcion_criterio)
+        Y_predicho = ArbolDecisionManual.predecir(X_val)
+        resultados[criterio] = get_accuracy_precision_recall_f1(Y_val, Y_predicho, objetivo=0)
 
-    RandomForest = RandomForestClassifier(criterion='entropy', random_state=12345)
-    RandomForest.fit(X_train_librerias, Y_train_librerias)
-    Y_predicho_random_forest = RandomForest.predict(X_test_librerias)
-    presicion_random_forest = accuracy_score(Y_test_librerias, Y_predicho_random_forest)
+    return resultados
 
-    print(f"Presicion del arbol de decision manual: {presicion_manual}")
-    print(f"Presicion del arbol de decision de libreria: {precision_arbol_libreria}")
-    print(f"Presicion del random forest de libreria: {presicion_random_forest}")
+def plot_metrics(resultados, max_range_split):
+    funciones_seleccion = resultados.keys()
+    metricas = ['Accuracy', 'Precision', 'Recall', 'F1']
 
+    def convert_results_to_matrix(resultados):
+        return {
+            'Accuracy': [resultados[criterio][0] for criterio in funciones_seleccion],
+            'Precision': [resultados[criterio][1] for criterio in funciones_seleccion],
+            'Recall': [resultados[criterio][2] for criterio in funciones_seleccion],
+            'F1': [resultados[criterio][3] for criterio in funciones_seleccion]
+        }
+
+    results_matrix = convert_results_to_matrix(resultados)
+
+    x = np.arange(len(metricas))  
+    width = 0.2  
+
+    _, ax = plt.subplots(figsize=(7, 5))
+
+    for i, metrica in enumerate(metricas):
+        ax.bar(x[i] - width, results_matrix[metrica][0], width, color='skyblue', label='Entropía' if i == 0 else "")
+        ax.bar(x[i], results_matrix[metrica][1], width, color='salmon', label='Gain Ratio' if i == 0 else "")
+        ax.bar(x[i] + width, results_matrix[metrica][2], width, color='lightgreen', label='Impurity Reduction' if i == 0 else "")
+
+    ax.set_xlabel('Métrica')
+    ax.set_ylabel('Valor')
+    ax.set_title(f'max_range_split = {max_range_split}')
+    ax.set_xticks(x)
+    ax.set_xticklabels(metricas)
+
+    ax.set_ylim(0.75, 1)
+
+    handles = [plt.Rectangle((0, 0), 1, 1, color='skyblue'), plt.Rectangle((0, 0), 1, 1, color='salmon'), plt.Rectangle((0, 0), 1, 1, color='lightgreen')]
+
+    ax.legend(handles, ['Entropía', 'Gain Ratio', 'Impurity reduction'], title='Criterio')
+
+    plt.show()
+
+def plot_metrics_comparativa(results_sin_dropear, results_con_dropear, max_range_split):
+    metrics_names = ['Accuracy', 'F1']
+    colores = ['skyblue', 'salmon']
+    
+    accuracy_sin_dropear, _, _, f1_sin_dropear = results_sin_dropear
+    accuracy_con_dropear, _, _, f1_con_dropear = results_con_dropear
+
+    resultados_sin_dropear = [accuracy_sin_dropear, f1_sin_dropear]
+    resultados_con_dropear = [accuracy_con_dropear, f1_con_dropear]
+
+    x = np.arange(len(metrics_names))  
+    width = 0.35 
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+
+    ax.bar(x - width / 2, resultados_sin_dropear, width, color=colores[0], label='Sin dropear')
+    ax.bar(x + width / 2, resultados_con_dropear, width, color=colores[1], label='Con dropear')
+
+    ax.set_xticks(x)  
+    ax.set_xticklabels(metrics_names) 
+    ax.set_ylim(0.75, 1)
+    
+    ax.set_xlabel('Métrica')
+    ax.set_ylabel('Valor')
+    ax.set_title(f'max_range_split={max_range_split}')
+    ax.legend()
+
+    plt.show()
+
+def plot_accuracies_and_f1s(accuracies, f1s):
+    num_modelos = len(accuracies)  
+    x = np.arange(num_modelos) 
+    width = 0.35 
+    
+    _, ax = plt.subplots(figsize=(7, 5))
+
+    bars1 = ax.bar(x - width/2, accuracies, width, label='Accuracy')
+
+    bars2 = ax.bar(x + width/2, f1s, width, label='F1')
+
+    ax.set_xlabel('Modelo')
+    ax.set_ylabel('Valor')
+    ax.set_title('Comparación de Accuracy y F1 por Modelo')
+    ax.set_xticks(x)
+    ax.set_xticklabels(['Predictor Simple', 'Manual', 'Árbol Librería', 'Random Forest'])
+    ax.set_ylim(0.5, 1)
+    ax.legend()
+
+    def add_labels(bars):
+        for bar in bars:
+            height = bar.get_height()
+            ax.annotate(f'{height:.2f}',
+                        xy=(bar.get_x() + bar.get_width() / 2, height),
+                        xytext=(0, 3),  
+                        textcoords='offset points',
+                        ha='center', va='bottom')
+
+    add_labels(bars1)
+    add_labels(bars2)
+
+    plt.tight_layout()
+    plt.show()
+
+def plot_confusion_matrix(Y_real, Y_predicho):
+    plt.figure(figsize=(7, 5))
+
+    sns.heatmap(confusion_matrix(Y_real, Y_predicho), annot=True, fmt="d", cmap="Blues", xticklabels=[0,1], yticklabels=[0, 1])
+
+    plt.ylabel('Clase Verdadera')
+    plt.xlabel('Clase Predicha')
+    plt.title('Matriz de Confusión')
+
+    plt.show()
 

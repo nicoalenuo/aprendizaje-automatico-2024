@@ -1,15 +1,11 @@
 import pandas as pd
 import math
 from sklearn.metrics import  accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
-from sklearn.model_selection import train_test_split
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import MinMaxScaler
 import matplotlib.pyplot as plt
 import numpy as np
+import sklearn.preprocessing as sk_pre
 import seaborn as sns
 
-DATASET_FILE = "data.csv"
 OBJETIVO = 'cid'
 
 class ArbolDecision:
@@ -17,20 +13,20 @@ class ArbolDecision:
     def __init__(self):
         self.arbol = None
 
-    @staticmethod
-    def ID3(X, Y, funcion_seleccion_atributo, preprocesar, max_range_split, atributos_a_discretizar):
+    def ID3(self, X, Y, funcion_seleccion_atributo, preprocesar, max_range_split, atributos_a_categorizar):
         '''
         Genera un arbol de decision a partir de los datos X y Y.
-        los nodos tienen 3 atributos
+        los nodos tienen 4 atributos
         label: Nombre del atributo a comparar, en caso de haber llegado a una hoja, es None, en caso de ser la raiz, es el atributo con mayor ganancia
         children: Lista de pares (valor, nodo) donde valor es el valor del atributo a comparar y nodo es el subarbol que se debe seguir
+        puntos_corte: Generado unicamente si preprocesar=False, por lo que se tienen que categorizar los atributos durante la ejecucion del algoritmo. Es una lista de puntos de corte a usar al momento de predecir
         result: En caso de ser una hoja, es el resultado final predicho de la clasificacion, en caso de ser un nodo intermedio, es None
         '''
 
         valores_unicos = Y.unique()
 
         if len(valores_unicos) == 0:
-            return {'label': None, 'puntos_corte': None, 'children': None, 'result': 0}
+            return {'label': None, 'puntos_corte': None, 'children': None, 'result': self.elemento_mayoritario}
 
         if len(valores_unicos) == 1:
             return {'label': None, 'puntos_corte': None, 'children': None, 'result' : valores_unicos[0]}
@@ -38,17 +34,17 @@ class ArbolDecision:
         mejor_atributo = funcion_seleccion_atributo(X, Y)
 
         if mejor_atributo is None:
-            return {'label': None, 'children': None, 'result': 0}
+            return {'label': None, 'children': None, 'result': self.elemento_mayoritario}
 
         puntos_corte = None
-        if not preprocesar and max_range_split is not None and mejor_atributo in atributos_a_discretizar:
-            X[mejor_atributo], puntos_corte = discretizar_atributo_por_resultado(X[mejor_atributo], Y, max_range_split)
+        if not preprocesar and max_range_split is not None and mejor_atributo in atributos_a_categorizar:
+            X[mejor_atributo], puntos_corte = categorizar_atributo(X[mejor_atributo], Y, max_range_split)
 
         children = []
         for valor in X[mejor_atributo].unique():
             subset_X = X[X[mejor_atributo] == valor].drop(columns=[mejor_atributo])
             subset_Y = Y[X[mejor_atributo] == valor]
-            children.append((valor, ArbolDecision.ID3(subset_X, subset_Y, funcion_seleccion_atributo, preprocesar, max_range_split, atributos_a_discretizar)))
+            children.append((valor, self.ID3(subset_X, subset_Y, funcion_seleccion_atributo, preprocesar, max_range_split, atributos_a_categorizar)))
 
         return {
             'label': mejor_atributo,
@@ -58,13 +54,14 @@ class ArbolDecision:
         }
 
 
-    def entrenar(self, X, Y, funcion_seleccion_atributo, preprocesar, max_range_split, atributos_a_discretizar):
+    def entrenar(self, X, Y, funcion_seleccion_atributo, preprocesar, max_range_split, atributos_a_categorizar):
         '''
         Funcion que entrena el arbol de decision con los datos X, Y
-        si preprocesar=True, se discretizan los atributos antes de comenzar el algoritmo ID3 y se guardan todos los puntos de corte en la clase
-        si preprocesar=False, los atributos se discretizan durante la ejecucion del algoritmo ID3, y los puntos de corte se guardan en el arbol
+        si preprocesar=True, se categorizan los atributos antes de comenzar el algoritmo ID3 y se guardan todos los puntos de corte en la clase
+        si preprocesar=False, los atributos se categorizan durante la ejecucion del algoritmo ID3, y los puntos de corte se guardan en el arbol
         '''
         self.arbol = None
+        self.elemento_mayoritario = Y.mode()[0]
         
         # Se genera una copia de los datos para no modificar los originales
         X_copia = X.copy()
@@ -74,18 +71,18 @@ class ArbolDecision:
             raise Exception("La funcion de seleccion de atributo no es valida")
 
         self.preprocesar = preprocesar
-        self.atributos_a_discretizar = atributos_a_discretizar
+        self.atributos_a_categorizar = atributos_a_categorizar
         self.puntos_corte = None
 
         if preprocesar:
             puntos_corte = {}
-            for atributo in atributos_a_discretizar:
-                X_copia[atributo], puntos_corte_atributo = discretizar_atributo_por_resultado(X_copia[atributo], Y_copia, max_range_split)
+            for atributo in atributos_a_categorizar:
+                X_copia[atributo], puntos_corte_atributo = categorizar_atributo(X_copia[atributo], Y_copia, max_range_split)
                 puntos_corte[atributo] = puntos_corte_atributo.copy()
             
             self.puntos_corte = puntos_corte
 
-        self.arbol = ArbolDecision.ID3(X_copia, Y_copia, funcion_seleccion_atributo, preprocesar, max_range_split, atributos_a_discretizar)
+        self.arbol = self.ID3(X_copia, Y_copia, funcion_seleccion_atributo, preprocesar, max_range_split, atributos_a_categorizar)
     
     def predecir_entrada(self, arbol, X):
         '''
@@ -96,14 +93,14 @@ class ArbolDecision:
 
         categoria = arbol['label']
 
-        if not self.preprocesar and categoria in self.atributos_a_discretizar: # Los puntos de corte estan guardados en el arbol
+        if not self.preprocesar and categoria in self.atributos_a_categorizar: # Los puntos de corte estan guardados en el arbol
             valor = 0
             for i in range(len(arbol['puntos_corte'])):
                 if X[categoria] > arbol['puntos_corte'][i]:
                     valor = i + 1
                 else:
                     break
-        elif categoria in self.atributos_a_discretizar: # Los puntos de corte estan guardados en la clase
+        elif categoria in self.atributos_a_categorizar: # Los puntos de corte estan guardados en la clase
             valor = 0
             puntos_corte = self.puntos_corte[categoria]
             for i in range(len(puntos_corte)):
@@ -118,8 +115,7 @@ class ArbolDecision:
             if valor == valor_hijo:
                 return self.predecir_entrada(hijo, X)
 
-        return 0
-
+        return self.elemento_mayoritario
 
     def predecir(self, X):
         '''
@@ -131,6 +127,33 @@ class ArbolDecision:
         Y_predicho = [self.predecir_entrada(self.arbol, X.iloc[i].copy()) for i in range(len(X))]
         
         return Y_predicho
+
+def aplicar_ohe(dataset, X_train_librerias, X_test_librerias, atributo):
+    
+    ohe = sk_pre.OneHotEncoder(sparse_output=False)
+
+    ohe.fit(dataset[atributo].to_numpy().reshape(-1,1))
+    new_train = ohe.transform(X_train_librerias[atributo].to_numpy().reshape(-1,1))
+    new_test  = ohe.transform(X_test_librerias[atributo].to_numpy().reshape(-1,1))
+
+    if atributo == 'trt':
+        X_train_librerias['trt_1nd']=new_train[:,0]
+        X_train_librerias['trt_2nd']=new_train[:,1]
+        X_train_librerias['trt_3nd']=new_train[:,2]
+        X_train_librerias['trt_4nd']=new_train[:,3]
+        X_test_librerias['trt_1nd']=new_test[:,0]
+        X_test_librerias['trt_2nd']=new_test[:,1]
+        X_test_librerias['trt_3nd']=new_test[:,2]
+        X_test_librerias['trt_4nd']=new_test[:,3]
+    else:
+        X_train_librerias['strat_1nd']=new_train[:,0]
+        X_train_librerias['strat_2nd']=new_train[:,1]
+        X_train_librerias['strat_3nd']=new_train[:,2]
+        X_test_librerias['strat_1nd']=new_test[:,0]
+        X_test_librerias['strat_2nd']=new_test[:,1]
+        X_test_librerias['strat_3nd']=new_test[:,2]
+
+    return X_train_librerias, X_test_librerias
     
 # --------------------------------------------
 # Funciones de entropía
@@ -159,7 +182,7 @@ def get_entropia_atributo(X, Y, atributo):
     return entropia
 
 # --------------------------------------------
-# Funciones para discretizar atributos
+# Funciones para categorizar atributos
 # --------------------------------------------
 
 def calcular_ganancia_informacion(X, Y, punto_corte):
@@ -180,27 +203,25 @@ def calcular_ganancia_informacion(X, Y, punto_corte):
     
     return ganancia_informacion
 
-def discretizar_atributo_por_resultado(X, Y, max_range_split):
+def categorizar_atributo(X, Y, max_range_split):
     """
-    Discretiza un atributo X con respecto al resultado Y, maximizando la pureza de las particiones.
-    Solo considera puntos de corte donde también cambia el valor de Y.
+    Categoriza un atributo X con respecto al resultado Y, maximizando la ganancia de información.
+    Para esto, calcula la ganancia de información al dividir el atributo en todos los puntos de corte posibles
+    y selecciona los max_range_split - 1 puntos de corte que maximizan la ganancia de información.
+    Devuelve también los puntos de corte seleccionados
     """
+    datos = pd.DataFrame({'X': X, 'Y': Y}).sort_values(by='X').drop_duplicates(subset='X')
 
-    cambios_Y = [i for i in range(1, len(Y)) if Y.iloc[i] != Y.iloc[i-1]]
-    
-    if not cambios_Y:
-        return X.tolist(), []
-    
-    valores_unicos = sorted(X.unique())
     puntos_corte = []
     
-    for i in cambios_Y:
-        if i < len(valores_unicos) - 1:
-            punto_corte_actual = (valores_unicos[i] + valores_unicos[i + 1]) / 2
-            ganancia_actual = calcular_ganancia_informacion(X, Y, punto_corte_actual)
+    for i in range(1, len(datos)):
+        if datos.iloc[i]['Y'] != datos.iloc[i-1]['Y']:
+            punto_corte_actual = (datos.iloc[i]['X'] + datos.iloc[i-1]['X']) / 2
+            ganancia_actual = calcular_ganancia_informacion(datos['X'], datos['Y'], punto_corte_actual)
             puntos_corte.append((punto_corte_actual, ganancia_actual))
     
     puntos_corte_ordenados = sorted(puntos_corte, key=lambda x: x[1], reverse=True)
+    
     puntos_corte_seleccionados = sorted([p[0] for p in puntos_corte_ordenados[:max_range_split-1]])
     
     X_discretizado = []
@@ -317,8 +338,7 @@ def get_accuracy_precision_recall_f1(Y_real, Y_predicho, objetivo=0):
 
 def entrenar_y_evaluar(arboles, X_val, Y_val):
     '''
-    Para un conjunto X, Y de entrenamiento, entrena un arbol utilizando las 3 funciones de seleccion de atributo
-    y evalua el arbol en el conjunto de validacion X_val, Y_val
+    Para un conjunto de 3 arboles, uno por cada criterio, evalua el accuracy, precision, recall y f1 en el conjunto de validacion
     '''
 
     criterios = ['Entropia', 'Gain ratio', 'Impurity reduction']
@@ -331,7 +351,7 @@ def entrenar_y_evaluar(arboles, X_val, Y_val):
 
     return resultados
 
-def plot_metrics(resultados, max_range_split):
+def plot_metricas(resultados, max_range_split):
     funciones_seleccion = resultados.keys()
     metricas = ['Accuracy', 'Precision', 'Recall', 'F1']
 
@@ -408,44 +428,8 @@ def plot_confusion_matrix(Y_real, Y_predicho):
 
     sns.heatmap(confusion_matrix(Y_real, Y_predicho), annot=True, fmt="d", cmap="Blues", xticklabels=[0,1], yticklabels=[0, 1])
 
-    plt.ylabel('Clase Verdadera')
-    plt.xlabel('Clase Predicha')
-    plt.title('Matriz de Confusión')
+    plt.ylabel('Clase verdadera')
+    plt.xlabel('Clase predicha')
+    plt.title('Matriz de confusión')
 
     plt.show()
-
-if (__name__ == "__main__"):
-    
-    dataset = pd.read_csv(DATASET_FILE)
-
-    atributos_a_discretizar = ['pidnum', 'time', 'age', 'wtkg', 'karnof', 'preanti', 'cd40', 'cd420', 'cd80', 'cd820']
-    
-    X_manual = dataset.copy().drop(columns=[OBJETIVO])
-    Y_manual = dataset[OBJETIVO].copy()
-
-    X_librerias = dataset.copy().drop(columns=[OBJETIVO])
-    Y_librerias = dataset[OBJETIVO].copy()
-
-    X_train, X_test, Y_train, Y_test = train_test_split(X_manual, Y_manual, test_size = 0.15, random_state = 12345, stratify=Y_manual)
-    X_train, X_validacion, Y_train, Y_validacion = train_test_split(X_train, Y_train, test_size=0.15, random_state=12345, stratify=Y_train)
-
-    X_train_librerias, X_test_librerias, Y_train_librerias, Y_test_librerias = train_test_split(X_librerias, Y_librerias, test_size = 0.3, random_state = 12345, stratify=Y_librerias)
-
-    ArbolDecisionManual = ArbolDecision()
-    ArbolDecisionManual.entrenar(X_train, Y_train, get_mejor_atributo_gain_ratio, True, 3, atributos_a_discretizar)
-    Y_predicho_manual = ArbolDecisionManual.predecir(X_test)
-    presicion_manual = accuracy_score(Y_test, Y_predicho_manual)
-
-    ArbolDecisionLibreria = DecisionTreeClassifier(criterion='entropy', random_state=12345)
-    ArbolDecisionLibreria.fit(X_train_librerias, Y_train_librerias)
-    Y_predicho_arbol_libreria = ArbolDecisionLibreria.predict(X_test_librerias)
-    precision_arbol_libreria = accuracy_score(Y_test_librerias, Y_predicho_arbol_libreria)
-
-    RandomForest = RandomForestClassifier(criterion='entropy', random_state=12345)
-    RandomForest.fit(X_train_librerias, Y_train_librerias)
-    Y_predicho_random_forest = RandomForest.predict(X_test_librerias)
-    presicion_random_forest = accuracy_score(Y_test_librerias, Y_predicho_random_forest)
-
-    print(f'Precisión del árbol de decisión manual: {presicion_manual}')
-    print(f'Precisión del árbol de decisión de librería: {precision_arbol_libreria}')
-    print(f'Precisión del Random Forest: {presicion_random_forest}')

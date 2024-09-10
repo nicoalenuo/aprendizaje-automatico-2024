@@ -50,10 +50,7 @@ class NaiveBayesAIDS:
         for atributo in self.atributos_a_categorizar:
             X_copy[atributo] = self.discretizer.fit_transform(X_copy[[atributo]])
             bin_edges = self.discretizer.bin_edges_
-            if len(bin_edges[0]) == 4:
-                self.puntos_corte[atributo] = bin_edges[0][1:3].copy()
-            else:
-                self.puntos_corte[atributo] = bin_edges[0][1:2].copy() #Algunos casos no se generan 2 cortes
+            self.puntos_corte[atributo] = bin_edges[0][1:3].copy()
             self.valores_posibles[atributo] = [i for i in range(len(self.puntos_corte[atributo]) + 1)]
         
         self.total_entradas = len(X_copy)

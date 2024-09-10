@@ -28,7 +28,7 @@ class NaiveBayesAIDS:
         self.puntos_corte = None
         self.probabilidades_0 = None
         self.probabilidades_1 = None
-        self.discretizer = KBinsDiscretizer(n_bins=3, encode="ordinal", strategy='quantile', random_state=12345)
+        self.discretizer = KBinsDiscretizer(n_bins=3, encode="ordinal", strategy='kmeans', random_state=12345)
         self.threshold = threshold
 
     def fit(self, X, Y):
@@ -45,24 +45,16 @@ class NaiveBayesAIDS:
         # Se copian los datos para no modificar los originales
         X_copy = X.copy()
         Y_copy = Y.copy()
-
+    
         self.puntos_corte = {}
         for atributo in self.atributos_a_categorizar:
-            X_copy[atributo], puntos_corte_atributo = categorizar_atributo(X_copy[atributo], Y_copy, 3)
-            self.puntos_corte[atributo] = puntos_corte_atributo.copy()
-            self.valores_posibles[atributo] = [i for i in range(len(self.puntos_corte[atributo]) + 1)]
-        
-        '''                
-        puntos_corte = {}
-        for atributo in self.atributos_a_categorizar:
-            X_copy[atributo] = discretizer.fit_transform(X_copy[[atributo]])
-            bin_edges = discretizer.bin_edges_
+            X_copy[atributo] = self.discretizer.fit_transform(X_copy[[atributo]])
+            bin_edges = self.discretizer.bin_edges_
             if len(bin_edges[0]) == 4:
-                puntos_corte[atributo] = bin_edges[0][1:3]
+                self.puntos_corte[atributo] = bin_edges[0][1:3].copy()
             else:
-                puntos_corte[atributo] = bin_edges[0][1:2] #Algunos casos no se generan 2 cortes
-        self.puntos_corte = puntos_corte
-        '''
+                self.puntos_corte[atributo] = bin_edges[0][1:2].copy() #Algunos casos no se generan 2 cortes
+            self.valores_posibles[atributo] = [i for i in range(len(self.puntos_corte[atributo]) + 1)]
         
         self.total_entradas = len(X_copy)
         self.totales_0 = len(X_copy[Y_copy == 0])
@@ -130,18 +122,7 @@ class NaiveBayesAIDS:
 # -----------------------
 # Funciones para discretizar atributos
 # -----------------------
-
-def get_entropia(Y):
-    valores_unicos = Y.unique()
-    total = len(Y)
-    entropia = 0
-
-    for unico in valores_unicos:
-        cantidad = len(Y[Y == unico])
-        entropia -= (cantidad / total) * (math.log2(cantidad / total) if cantidad != 0 else 0)
-
-    return entropia
-
+    
 def categorizar_con_puntos_de_corte(X, puntos_corte):
     """
     Categoriza un atributo X con respecto a los puntos de corte dados
@@ -157,50 +138,7 @@ def categorizar_con_puntos_de_corte(X, puntos_corte):
         X_discretizado.append(bin_asignado)
     
     return X_discretizado
-
-def calcular_ganancia_informacion(X, Y, punto_corte):
-    """
-    Calcula la ganancia de información al dividir el atributo X en un punto de corte
-    """
-    Y_izquierda = Y[X <= punto_corte]
-    Y_derecha = Y[X > punto_corte]
-    
-    entropia_total = get_entropia(Y)
-    entropia_izquierda = get_entropia(Y_izquierda)
-    entropia_derecha = get_entropia(Y_derecha)
-    
-    peso_izquierda = len(Y_izquierda) / len(Y)
-    peso_derecha = len(Y_derecha) / len(Y)
-    
-    ganancia_informacion = entropia_total - (peso_izquierda * entropia_izquierda + peso_derecha * entropia_derecha)
-    
-    return ganancia_informacion
-
-def categorizar_atributo(X, Y, max_range_split):
-    """
-    Categoriza un atributo X con respecto al resultado Y, maximizando la ganancia de información.
-    Para esto, calcula la ganancia de información al dividir el atributo en todos los puntos de corte posibles
-    y selecciona los max_range_split - 1 puntos de corte que maximizan la ganancia de información.
-    Devuelve también los puntos de corte seleccionados
-    """
-    datos = pd.DataFrame({'X': X, 'Y': Y}).sort_values(by='X').drop_duplicates(subset='X')
-
-    puntos_corte = []
-    
-    for i in range(1, len(datos)):
-        if datos.iloc[i]['Y'] != datos.iloc[i-1]['Y']:
-            punto_corte_actual = (datos.iloc[i]['X'] + datos.iloc[i-1]['X']) / 2
-            ganancia_actual = calcular_ganancia_informacion(datos['X'], datos['Y'], punto_corte_actual)
-            puntos_corte.append((punto_corte_actual, ganancia_actual))
-    
-    puntos_corte_ordenados = sorted(puntos_corte, key=lambda x: x[1], reverse=True)
-    
-    puntos_corte_seleccionados = sorted([p[0] for p in puntos_corte_ordenados[:max_range_split-1]])
-    
-    X_discretizado = categorizar_con_puntos_de_corte(X, puntos_corte_seleccionados)
-    
-    return X_discretizado, puntos_corte_seleccionados        
-
+  
 # -----------------------
 # Todo esto para el informe
 # -----------------------

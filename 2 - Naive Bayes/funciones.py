@@ -7,6 +7,8 @@ from sklearn.metrics import  accuracy_score, precision_score, recall_score, f1_s
 from scipy.stats import chi2_contingency
 import itertools
 import math
+from sklearn.metrics import precision_recall_curve
+import matplotlib.pyplot as plt
 
 dataset = pd.read_csv('data.csv')
 
@@ -15,7 +17,7 @@ DATASET_FILE = 'data.csv'
 
 class NaiveBayesAIDS:
 
-    def __init__(self, m, valores_posibles, atributos_a_categorizar, preprocesar):
+    def __init__(self, m, valores_posibles, atributos_a_categorizar, preprocesar=True):
         ''' 
         Parametros
         ----------
@@ -27,10 +29,10 @@ class NaiveBayesAIDS:
         self.m = m
         self.valores_posibles = valores_posibles
         self.atributos_a_categorizar = atributos_a_categorizar
+        self.preprocesar = preprocesar
         self.puntos_corte = None
         self.probabilidades_0 = None
         self.probabilidades_1 = None
-        self.preprocesar = preprocesar
 
     def fit(self, X, Y):
         '''
@@ -78,21 +80,45 @@ class NaiveBayesAIDS:
             for val in self.valores_posibles[cat]:
                 # P(X|Y=0)
                 e = len(X_copy[(X_copy[cat] == val) & (Y_copy == 0)])
-                self.probabilidades_0[cat][val] = math.log((e + self.m * p) / (self.m + self.totales_0))
+                self.probabilidades_0[cat][val] = (e + self.m * p) / (self.m + self.totales_0)
                 
                 # P(X|Y=1)
                 e = len(X_copy[(X_copy[cat] == val) & (Y_copy == 1)])
-                self.probabilidades_1[cat][val] = math.log((e + self.m * p) / (self.m + self.totales_1))
+                self.probabilidades_1[cat][val] = (e + self.m * p) / (self.m + self.totales_1)
 
+    def __predict_proba_entrada(self, X):
+        resultado_0 = self.totales_0 / self.total_entradas
+        resultado_1 = self.totales_1 / self.total_entradas
 
-    def predecir_entrada(self, X):
+        for cat in self.valores_posibles.keys():
+            resultado_0 *= self.probabilidades_0[cat][X[cat]]
+            resultado_1 *= self.probabilidades_1[cat][X[cat]]
+        
+        norma = resultado_0 + resultado_1
+        return [resultado_0 / norma, resultado_1 / norma]
+
+    def predict_proba(self, X):
+        if (not self.probabilidades_0 or not self.probabilidades_1):
+            raise Exception("El modelo no ha sido entrenado")
+        
+        # Se copian los datos para no modificar los originales
+        # Además, se categorizan los atributos con los puntos de corte calculados en el entrenamiento
+        X_copy = X.copy()
+        for categoria in self.atributos_a_categorizar:
+            X_copy[categoria] = np.digitize(X_copy[categoria], self.puntos_corte[categoria])
+
+        Y_probs_predicho = [self.__predict_proba_entrada(X_copy.iloc[i]) for i in range(len(X))]
+        
+        return Y_probs_predicho
+
+    def __predict_entrada(self, X):
 
         resultado_0 = math.log(self.totales_0 / self.total_entradas)
         resultado_1 = math.log(self.totales_1 / self.total_entradas)
 
         for cat in self.valores_posibles.keys():
-            resultado_0 += self.probabilidades_0[cat][X[cat]]
-            resultado_1 += self.probabilidades_1[cat][X[cat]]
+            resultado_0 += math.log(self.probabilidades_0[cat][X[cat]])
+            resultado_1 += math.log(self.probabilidades_1[cat][X[cat]])
         
         return 0 if resultado_0 > resultado_1 else 1
 
@@ -107,7 +133,7 @@ class NaiveBayesAIDS:
         for categoria in self.atributos_a_categorizar:
             X_copy[categoria] = np.digitize(X_copy[categoria], self.puntos_corte[categoria])
 
-        Y_predicho = [self.predecir_entrada(X_copy.iloc[i]) for i in range(len(X))]
+        Y_predicho = [self.__predict_entrada(X_copy.iloc[i]) for i in range(len(X))]
 
         return Y_predicho
 
@@ -153,9 +179,44 @@ if (__name__ == '__main__'):
     print(f'Accuracy: {accuracy}')
 
     # -----------------------
-    # Selección de atributos
+    # Curva Precision-Recall
     # -----------------------
 
+    probas = coso.predict_proba(X_test)
+
+    probs_clase_0 = [p[0] for p in probas]
+
+    precision, recall, thresholds = precision_recall_curve(Y_test, probs_clase_0, pos_label=0)
+
+    thresholds = np.append(thresholds, 1)
+
+    plt.figure(figsize=(8, 6))
+    plt.plot(thresholds, precision, label='Precision', color='blue')
+    plt.plot(thresholds, recall, label='Recall', color='green')
+
+    plt.xlabel('Threshold')
+    plt.ylabel('Precision / Recall')
+    plt.title('Curva Precision-Recall')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.0]) 
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+    diferencias = np.abs(precision - recall)
+    indice_minimo = np.argmin(diferencias)
+    umbral_mejor = thresholds[indice_minimo]
+    precision_mejor = precision[indice_minimo]
+    recall_mejor = recall[indice_minimo]
+
+    print(f'Umbral óptimo: {umbral_mejor}')
+    print(f'Precision óptima: {precision_mejor}')
+    print(f'Recall óptimo: {recall_mejor}')
+
+    # -----------------------
+    # Selección de atributos
+    # -----------------------
+    '''
     discretizer = KBinsDiscretizer(n_bins=3, encode="ordinal", strategy='kmeans', random_state=12345)
     puntos_corte = {}
     for atributo in atributos_a_categorizar:
@@ -205,3 +266,4 @@ if (__name__ == '__main__'):
 
     print(f'Accuracy maximo: {accuracy_max}')
     print(f'Subset optimo: {subset_optimo}')
+    '''

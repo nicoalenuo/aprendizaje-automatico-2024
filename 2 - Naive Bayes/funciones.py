@@ -5,6 +5,7 @@ from sklearn.preprocessing import KBinsDiscretizer
 from sklearn.metrics import  accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 from scipy.stats import chi2_contingency
 import itertools
+import math
 
 dataset = pd.read_csv('data.csv')
 
@@ -13,14 +14,13 @@ DATASET_FILE = 'data.csv'
 
 class NaiveBayesAIDS:
 
-    def __init__(self, m, valores_posibles, atributos_a_categorizar, threshold=0.5):
+    def __init__(self, m, valores_posibles, atributos_a_categorizar, preprocesar):
         ''' 
         Parametros
         ----------
         m: tamaño equivalente de muestra
         valores_posibles: map {categoria, [valores posibles]} NO incluyendo la categoria objetivo
         atriubtos_a_categorizar: lista de atributos que se categorizarán
-        threshold: umbral para la clasificación
         '''
         self.m = m
         self.valores_posibles = valores_posibles
@@ -29,7 +29,7 @@ class NaiveBayesAIDS:
         self.probabilidades_0 = None
         self.probabilidades_1 = None
         self.discretizer = KBinsDiscretizer(n_bins=3, encode="ordinal", strategy='quantile', random_state=12345)
-        self.threshold = threshold
+        self.preprocesar = preprocesar
 
     def fit(self, X, Y):
         '''
@@ -46,11 +46,12 @@ class NaiveBayesAIDS:
         X_copy = X.copy()
         Y_copy = Y.copy()
 
-        self.puntos_corte = {}
-        for atributo in self.atributos_a_categorizar:
-            X_copy[atributo], puntos_corte_atributo = categorizar_atributo(X_copy[atributo], Y_copy, 3)
-            self.puntos_corte[atributo] = puntos_corte_atributo.copy()
-            self.valores_posibles[atributo] = [i for i in range(len(self.puntos_corte[atributo]) + 1)]
+        if (self.preprocesar):
+            self.puntos_corte = {}
+            for atributo in self.atributos_a_categorizar:
+                X_copy[atributo], puntos_corte_atributo = categorizar_atributo(X_copy[atributo], Y_copy, 3)
+                self.puntos_corte[atributo] = puntos_corte_atributo.copy()
+                self.valores_posibles[atributo] = [i for i in range(len(self.puntos_corte[atributo]) + 1)]
         
         '''                
         puntos_corte = {}
@@ -118,7 +119,6 @@ class NaiveBayesAIDS:
             'm': self.m,
             'valores_posibles': self.valores_posibles,
             'atributos_a_categorizar': self.atributos_a_categorizar,
-            'threshold': self.threshold,
         }
 
     def set_params(self, **parameters):
@@ -213,13 +213,34 @@ if (__name__ == '__main__'):
     for categoria in X.columns:
         valores_posibles[categoria] = X[categoria].unique()
 
-        
-    atributos_a_categorizar = ['time', 'age', 'wtkg', 'karnof', 'preanti', 'cd40', 'cd420', 'cd80', 'cd820']
+    atributos_a_categorizar = ['time', 'age', 'wtkg', 'karnof', 'preanti', 'cd40', 'cd420', 'cd80', 'cd820']    
+
+    X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size = 0.15, random_state = 12345, stratify=Y)
+    X_train, X_validacion, Y_train, Y_validacion = train_test_split(X_train, Y_train, test_size = 0.15, random_state = 12345, stratify=Y_train)
+
+    puntos_corte = {}
+    for atributo in atributos_a_categorizar:
+        X_train[atributo], puntos_corte_atributo = categorizar_atributo(X_train[atributo], Y_train, 3)
+        puntos_corte[atributo] = puntos_corte_atributo.copy()
+        valores_posibles[atributo] = [i for i in range(len(puntos_corte[atributo]) + 1)]
 
     '''
-    Esta parte del codigo se encarga de eliminar los atributos que no tienen correlacion con el objetivo usando chi cuadrado
-    Es una prueba por ahora jeje
-    
+    m = 30
+    coso = NaiveBayesAIDS(m, valores_posibles, atributos_a_categorizar, True)
+    coso.fit(X_train, Y_train)
+
+    Y_pred = coso.predict(X_validacion)
+
+    accuracy = accuracy_score(Y_validacion, Y_pred)
+
+    print(f'Accuracy: {accuracy}')
+    '''
+
+
+    # -----------------------
+    # Selección de atributos
+    # -----------------------
+
     pd.options.display.float_format = '{:.12f}'.format
     correlacion = []
 
@@ -230,70 +251,34 @@ if (__name__ == '__main__'):
 
     df_correlacion = pd.DataFrame(correlacion, columns=['Atributo', 'p'])
 
+    # Para auementar la cantidad de atributos a dropear, se puede aumentar el valor de p
     atributos_a_dropear = df_correlacion[df_correlacion['p'] > 0.05]['Atributo'].tolist()
 
-    atributos_a_categorizar = list(set(atributos_a_categorizar) - set(atributos_a_dropear))
-    
-    X = X.drop(columns=atributos_a_dropear)
-
-    for atributo in atributos_a_dropear:
-        valores_posibles.pop(atributo)
-
-        
     print("Tabla de correlación:")
     print(df_correlacion.to_string(index=False))
 
     print(f'\nAtributos a dropear: {atributos_a_dropear}')
     
-    '''
-
-    X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size = 0.15, random_state = 12345, stratify=Y)
-    X_train, X_validacion, Y_train, Y_validacion = train_test_split(X_train, Y_train, test_size = 0.15, random_state = 12345, stratify=Y_train)
-
-
-    m = 30
-    coso = NaiveBayesAIDS(m, valores_posibles, atributos_a_categorizar, 0.5)
-    coso.fit(X_train, Y_train)
-
-    Y_pred = coso.predict(X_validacion)
-
-    accuracy = accuracy_score(Y_validacion, Y_pred)
-
-    print(f'Accuracy: {accuracy}')
-
-
-    '''
-    la idea del siguiente codigo era probar todas las combinaciones de subconjuntos a dropear y ver cual era la mejor
-
-    por ahora no funciona, puesto que en cada iteracion tiene que categorizar el conjunto completo jejeje
-    hay que precategorizarlo y fue
-    tomar en cuenta que hay 2^25 combinaciones posibles, asi que no va a terminar nunca si no se hace eso
-    luego pruebo
-
-    si sigue siendo muy lento, podemos probar a poner un limite sobre la cantidad de atributos a dropear
-    o usar solo combinaciones obtenidas de atributos elegidos por el chi cuadrado
-
     accuracy_max = 0
     subset_optimo = []
 
     for r in range(len(X.columns) + 1):
-        for subset in itertools.combinations(X.columns, r):
+        for subset in itertools.combinations(atributos_a_dropear, r):
             X_aux = X.copy().drop(columns=list(subset))
             #quitar las claves subset de valores_posibles
             valores_posibles_aux = valores_posibles.copy()
             for key in list(subset):
                 valores_posibles_aux.pop(key)
             atributos_a_categorizar_aux = list(set(atributos_a_categorizar) - set(list(subset)))
-            X_train, X_test, Y_train, Y_test = train_test_split(X_aux, Y, test_size = 0.15, random_state = 12345, stratify=Y)
-            X_train, X_validacion, Y_train, Y_validacion = train_test_split(X_train, Y_train, test_size = 0.15, random_state = 12345, stratify=Y_train)
-            coso = NaiveBayesAIDS(m, valores_posibles_aux, atributos_a_categorizar_aux, 0.5)
+            coso = NaiveBayesAIDS(30, valores_posibles_aux, atributos_a_categorizar_aux, False)
+            coso.set_params(puntos_corte=puntos_corte)
             coso.fit(X_train, Y_train)
             Y_pred = coso.predict(X_validacion)
             accuracy = accuracy_score(Y_validacion, Y_pred)
             if accuracy > accuracy_max:
+                print(f'Accuracy maximo: {accuracy}')
                 accuracy_max = accuracy
                 subset_optimo = subset
 
     print(f'Accuracy maximo: {accuracy_max}')
     print(f'Subset optimo: {subset_optimo}')
-    '''

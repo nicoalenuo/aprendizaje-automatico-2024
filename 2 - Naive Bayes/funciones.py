@@ -1,45 +1,32 @@
 import pandas as pd
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedKFold
 import math
 import numpy as np
 from sklearn.preprocessing import KBinsDiscretizer
 from sklearn.metrics import  accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
-from scipy.stats import chi2_contingency
 import itertools
-import math
 from sklearn.metrics import precision_recall_curve
 import matplotlib.pyplot as plt
-
-dataset = pd.read_csv('data.csv')
-
-OBJETIVO = 'cid'
-DATASET_FILE = 'data.csv'
+import seaborn as sns
+import itertools
 
 class NaiveBayesAIDS:
 
-    def __init__(self, m, valores_posibles, atributos_a_categorizar, preprocesar=True):
+    def __init__(self, m, valores_posibles):
         ''' 
         Parametros
         ----------
         m: tamaño equivalente de muestra
-        valores_posibles: map {categoria, [valores posibles que puede tomar la categoria]} NO incluyendo la categoria objetivo
-        atributos_a_categorizar: lista de atributos que se categorizarán por ser continuos o tener un rango amplio de valores posibles
-        preprocesar: booleano que indica si se deben categorizar los atributos en el array atributos_a_categorizar durante el entrenamiento o no (por ya estar categorizados)
+        valores_posibles: map {atributo: [valores posibles]} con los valores que puede tomar cada atributo
         '''
         self.m = m
         self.valores_posibles = valores_posibles
-        self.atributos_a_categorizar = atributos_a_categorizar
-        self.preprocesar = preprocesar
-        self.puntos_corte = None
         self.probabilidades_0 = None
         self.probabilidades_1 = None
 
     def fit(self, X, Y):
         '''
         Aplica el algoritmo de Naive Bayes para entrenar el modelo
-        Guarda el logaritmo de las probabilidades de cada valor de cada atributo para cada clase
-        para facilitar el cálculo de la probabilidad de una entrada en el método predict
-        y evitar errores al multiplicar valores muy pequeños
         
         para evitar eventos con probabilidad 0,
         se aplica la m-estimacion: P(X|Y) = (e + m*p) / (m + n)
@@ -52,22 +39,9 @@ class NaiveBayesAIDS:
         
         '''
 
-        # Se copian los datos para no modificar los originales
-        X_copy = X.copy()
-        Y_copy = Y.copy()
-
-        # Si los atributos a categorizar no estan categorizados, se ejecuta el siguiente bloque
-        if (self.preprocesar):
-            discretizer = KBinsDiscretizer(n_bins=3, encode="ordinal", strategy='kmeans', random_state=12345)
-            self.puntos_corte = {}
-            for atributo in self.atributos_a_categorizar:
-                X_copy[atributo] = discretizer.fit_transform(X_copy[[atributo]]).astype(int)
-                self.puntos_corte[atributo] = discretizer.bin_edges_[0][1:3]
-                self.valores_posibles[atributo] = np.unique(X_copy[atributo])
-        
-        self.total_entradas = len(X_copy)
-        self.totales_0 = len(X_copy[Y_copy == 0])
-        self.totales_1 = len(X_copy[Y_copy == 1])
+        self.total_entradas = len(X)
+        self.totales_0 = len(X[Y == 0])
+        self.totales_1 = len(X[Y == 1])
         self.probabilidades_0 = {}
         self.probabilidades_1 = {}
 
@@ -79,37 +53,12 @@ class NaiveBayesAIDS:
 
             for val in self.valores_posibles[cat]:
                 # P(X|Y=0)
-                e = len(X_copy[(X_copy[cat] == val) & (Y_copy == 0)])
+                e = len(X[(X[cat] == val) & (Y == 0)])
                 self.probabilidades_0[cat][val] = (e + self.m * p) / (self.m + self.totales_0)
                 
                 # P(X|Y=1)
-                e = len(X_copy[(X_copy[cat] == val) & (Y_copy == 1)])
+                e = len(X[(X[cat] == val) & (Y == 1)])
                 self.probabilidades_1[cat][val] = (e + self.m * p) / (self.m + self.totales_1)
-
-    def __predict_proba_entrada(self, X):
-        resultado_0 = self.totales_0 / self.total_entradas
-        resultado_1 = self.totales_1 / self.total_entradas
-
-        for cat in self.valores_posibles.keys():
-            resultado_0 *= self.probabilidades_0[cat][X[cat]]
-            resultado_1 *= self.probabilidades_1[cat][X[cat]]
-        
-        norma = resultado_0 + resultado_1
-        return [resultado_0 / norma, resultado_1 / norma]
-
-    def predict_proba(self, X):
-        if (not self.probabilidades_0 or not self.probabilidades_1):
-            raise Exception("El modelo no ha sido entrenado")
-        
-        # Se copian los datos para no modificar los originales
-        # Además, se categorizan los atributos con los puntos de corte calculados en el entrenamiento
-        X_copy = X.copy()
-        for categoria in self.atributos_a_categorizar:
-            X_copy[categoria] = np.digitize(X_copy[categoria], self.puntos_corte[categoria])
-
-        Y_probs_predicho = [self.__predict_proba_entrada(X_copy.iloc[i]) for i in range(len(X))]
-        
-        return Y_probs_predicho
 
     def __predict_entrada(self, X):
 
@@ -124,69 +73,179 @@ class NaiveBayesAIDS:
 
     
     def predict(self, X):
+        '''
+        Predice la clase de cada entrada en X
+        Utiliza el logaritmo de las probabilidades de cada valor de cada atributo para cada clase
+        para facilitar el cálculo de la probabilidad de una entrada
+        y evitar errores al multiplicar valores muy pequeños
+
+        Parametros
+        ----------
+        X: DataFrame con los datos a predecir
+        '''
         if (not self.probabilidades_0 or not self.probabilidades_1):
             raise Exception("El modelo no ha sido entrenado")
-        
-        # Se copian los datos para no modificar los originales
-        # Además, se categorizan los atributos con los puntos de corte calculados en el entrenamiento
-        X_copy = X.copy()
-        for categoria in self.atributos_a_categorizar:
-            X_copy[categoria] = np.digitize(X_copy[categoria], self.puntos_corte[categoria])
 
-        Y_predicho = [self.__predict_entrada(X_copy.iloc[i]) for i in range(len(X))]
-
+        Y_predicho = [self.__predict_entrada(X.iloc[i]) for i in range(len(X))]
         return Y_predicho
+    
+    def __predict_proba_entrada(self, X):
+        resultado_0 = self.totales_0 / self.total_entradas
+        resultado_1 = self.totales_1 / self.total_entradas
+
+        for cat in self.valores_posibles.keys():
+            resultado_0 *= self.probabilidades_0[cat][X[cat]]
+            resultado_1 *= self.probabilidades_1[cat][X[cat]]
+        
+        norma = resultado_0 + resultado_1
+        return [resultado_0 / norma, resultado_1 / norma]
+
+    def predict_proba(self, X):
+        '''
+        Calcula la probabilidad de cada clase para cada entrada en X
+
+        Parametros
+        ----------
+        X: DataFrame con los datos a predecir
+        
+        '''
+        if (not self.probabilidades_0 or not self.probabilidades_1):
+            raise Exception("El modelo no ha sido entrenado")
+
+        Y_probs_predicho = [self.__predict_proba_entrada(X.iloc[i]) for i in range(len(X))]
+        
+        return Y_probs_predicho
 
     def get_params(self, deep=True):
-        # Devuelve un diccionario con todos los parámetros del modelo
-        params = vars(self).copy()
-        if deep:
-            for key, value in params.items():
-                if hasattr(value, 'get_params'):
-                    params[key] = value.get_params(deep=True)
-
-        return params
+        return {
+            'm': self.m,
+            'valores_posibles': self.valores_posibles
+        }
 
 
-    def set_params(self, **parameters):
-        valid_params = self.get_params(deep=True)
-        for parameter, value in parameters.items():
-            if parameter in valid_params:
-                setattr(self, parameter, value)
+    def set_params(self, **params):
+        if 'm' in params:
+            self.m = params['m']
+        
+        if 'valores_posibles' in params:
+            self.valores_posibles = params['valores_posibles']
+            
         return self
-  
-# -----------------------
-# Todo esto para el informe
-# -----------------------
 
-if (__name__ == '__main__'):
-    X = dataset.copy().drop(columns=[OBJETIVO, 'pidnum'])
-    Y = dataset[OBJETIVO].copy()
+def validacion_cruzada(X_train, Y_train, m, atributos_a_categorizar, valores_posibles, splits):
+    '''
+    Aplica validación cruzada para evaluar el modelo
+    Para esto, usa StratifiedKFold para que la distribución de clases sea similar en cada partición
+    '''
+    skf = StratifiedKFold(n_splits = splits)
 
-    valores_posibles = {}
-    for categoria in X.columns:
-        valores_posibles[categoria] = X[categoria].unique()
-
-    atributos_a_categorizar = ['time', 'age', 'wtkg', 'karnof', 'preanti', 'cd40', 'cd420', 'cd80', 'cd820']    
-
-    X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size = 0.15, random_state = 12345, stratify=Y)
-    X_train, X_validacion, Y_train, Y_validacion = train_test_split(X_train, Y_train, test_size = 0.15, random_state = 12345, stratify=Y_train)
+    scores_accuracy = []
+    scores_precision = []
+    scores_recall = []
+    scores_f1 = []
     
-    coso = NaiveBayesAIDS(30, valores_posibles, atributos_a_categorizar, True)
-    coso.fit(X_train, Y_train)
-    Y_pred = coso.predict(X_validacion)
-    accuracy = accuracy_score(Y_validacion, Y_pred)
-    print(f'Accuracy: {accuracy}')
+    for train_index, val_index in skf.split(X_train, Y_train):
+        
+        X_train_cv, X_val_cv = X_train.iloc[train_index], X_train.iloc[val_index]
+        y_train_cv, y_val_cv = Y_train.iloc[train_index], Y_train.iloc[val_index]
 
-    # -----------------------
-    # Curva Precision-Recall
-    # -----------------------
+        # Se generan copias para evitar modificar los datos originales
+        X_train_copy = X_train_cv.copy()
+        X_val_copy = X_val_cv.copy()
+        
+        discretizer = KBinsDiscretizer(n_bins=3, encode="ordinal", strategy='kmeans', subsample=200_000, random_state=12345)
+        puntos_corte = {}
+        for atributo in atributos_a_categorizar:
+            X_train_copy[atributo] = discretizer.fit_transform(X_train_copy[[atributo]]).astype(int)
+            puntos_corte[atributo] = discretizer.bin_edges_[0][1:3]
+            valores_posibles[atributo] = np.unique(X_train_copy[atributo])
 
-    probas = coso.predict_proba(X_test)
+        # Discretizo el resto del conjunto de datos utilizando los puntos de corte aplicados a X_train
+        for atributo in atributos_a_categorizar:
+            X_val_copy[atributo] = np.digitize(X_val_copy[atributo], puntos_corte[atributo])
+        
+        # Defino y entreno al modelo
+        modelo_cv = NaiveBayesAIDS(m, valores_posibles)
+        modelo_cv.fit(X_train_copy, y_train_cv)
+        y_pred = modelo_cv.predict(X_val_copy)
+
+        # Calculo métricas
+        scores_accuracy.append(accuracy_score(y_val_cv, y_pred))
+        scores_precision.append(precision_score(y_val_cv, y_pred, pos_label=0))
+        scores_recall.append(recall_score(y_val_cv, y_pred, pos_label=0))
+        scores_f1.append(f1_score(y_val_cv, y_pred, pos_label=0))
+    
+    return np.mean(scores_accuracy), np.mean(scores_precision), np.mean(scores_recall), np.mean(scores_f1)
+
+
+
+def seleccionar_subconjunto_a_eliminar(X_train, Y_train, m, potenciales_atributos_a_dropear, valores_posibles, atributos_a_categorizar):
+    '''
+    Aplica validación cruzada para seleccionar el subconjunto de atributos a eliminar
+    Para esto, itera sobre todos los subconjuntos posibles de atributos a eliminar y selecciona el que maximiza el F1    
+    '''
+    accuracy_max = -1
+    f1_max = -1
+    subset_optimo = []
+
+    for r in range(len(potenciales_atributos_a_dropear) + 1):
+        for subset in itertools.combinations(potenciales_atributos_a_dropear, r):
+
+            valores_posibles_aux = valores_posibles.copy()
+            atributos_a_categorizar_aux = atributos_a_categorizar.copy()
+            for key in list(subset):
+                valores_posibles_aux.pop(key)
+                if key in atributos_a_categorizar_aux:
+                    atributos_a_categorizar_aux.remove(key)
+
+            accuracy, _, _, f1 = validacion_cruzada(X_train, Y_train, m, atributos_a_categorizar_aux, valores_posibles_aux, 5)
+
+            if (f1 > f1_max):
+                accuracy_max = accuracy
+                f1_max = f1
+                subset_optimo = subset
+
+    return subset_optimo, accuracy_max, f1_max
+        
+def get_accuracy_precision_recall_f1(Y_real, Y_predicho, objetivo=0):
+    """
+    Calcula la accuracy, precision, recall y f1
+    """
+    accuracy  = accuracy_score(Y_real, Y_predicho)
+    precision = precision_score(Y_real, Y_predicho, pos_label=objetivo)
+    recall    = recall_score(Y_real, Y_predicho, pos_label=objetivo)
+    f1        = f1_score(Y_real, Y_predicho, pos_label=objetivo)
+
+    return accuracy, precision, recall, f1  
+
+def plot_metricas(resultados, cant):
+    m_values = list(resultados.keys())[:cant]
+    accuracy_values = [resultados[m][0] for m in m_values]
+    f1_values = [resultados[m][3] for m in m_values]
+
+    min_accuracy = min(accuracy_values)
+    min_f1 = min(f1_values)
+    min_both = min(min_accuracy, min_f1)
+
+    plt.figure(figsize=(8, 6))
+    plt.plot(m_values, accuracy_values, label='Accuracy', color='blue')
+    plt.plot(m_values, f1_values, label='F1', color='green')
+    
+    plt.xlabel('M')
+    plt.ylabel('Valor Métrica')
+    plt.title('Curvas de Accuracy y F1 para diferentes valores de M')
+    plt.legend()
+    plt.xlim(0, cant+5)
+    plt.ylim([min_both - 0.030, 0.95])
+    plt.grid(True)
+    plt.show()
+
+def curva_precision_recall(modelo, X, Y):
+    probas = modelo.predict_proba(X)
 
     probs_clase_0 = [p[0] for p in probas]
 
-    precision, recall, thresholds = precision_recall_curve(Y_test, probs_clase_0, pos_label=0)
+    precision, recall, thresholds = precision_recall_curve(Y, probs_clase_0, pos_label=0)
 
     thresholds = np.append(thresholds, 1)
 
@@ -206,64 +265,16 @@ if (__name__ == '__main__'):
     diferencias = np.abs(precision - recall)
     indice_minimo = np.argmin(diferencias)
     umbral_mejor = thresholds[indice_minimo]
-    precision_mejor = precision[indice_minimo]
-    recall_mejor = recall[indice_minimo]
 
-    print(f'Umbral óptimo: {umbral_mejor}')
-    print(f'Precision óptima: {precision_mejor}')
-    print(f'Recall óptimo: {recall_mejor}')
+    print(f'Umbral donde se da el cruce: {umbral_mejor}')
 
-    # -----------------------
-    # Selección de atributos
-    # -----------------------
-    '''
-    discretizer = KBinsDiscretizer(n_bins=3, encode="ordinal", strategy='kmeans', random_state=12345)
-    puntos_corte = {}
-    for atributo in atributos_a_categorizar:
-        X_train[atributo] = discretizer.fit_transform(X_train[[atributo]]).astype(int)
-        puntos_corte[atributo] = discretizer.bin_edges_[0][1:3]
-        valores_posibles[atributo] = np.unique(X_train[atributo])
+def plot_confusion_matrix(Y_real, Y_predicho):
+    plt.figure(figsize=(7, 5))
 
-    pd.options.display.float_format = '{:.12f}'.format
-    correlacion = []
+    sns.heatmap(confusion_matrix(Y_real, Y_predicho), annot=True, fmt="d", cmap="Blues", xticklabels=[0,1], yticklabels=[0, 1])
 
-    for atributo in X.columns:
-        tabla_contingencia = pd.crosstab(X[atributo], Y)
-        _, p, _, _ = chi2_contingency(tabla_contingencia)
-        correlacion.append((atributo, p))
+    plt.ylabel('Clase verdadera')
+    plt.xlabel('Clase predicha')
+    plt.title('Matriz de confusión')
 
-    df_correlacion = pd.DataFrame(correlacion, columns=['Atributo', 'p'])
-
-    # Para auementar la cantidad de atributos a dropear, se puede aumentar el valor de p
-    atributos_a_dropear = df_correlacion[df_correlacion['p'] > 0.01]['Atributo'].tolist()
-
-    print("Tabla de correlación:")
-    print(df_correlacion.to_string(index=False))
-
-    print(f'\nAtributos a dropear: {atributos_a_dropear}')
-    
-    accuracy_max = 0
-    subset_optimo = []
-
-    for r in range(len(atributos_a_dropear) + 1):
-        for subset in itertools.combinations(atributos_a_dropear, r):
-            X_aux = X_train.copy().drop(columns=list(subset))
-            #quitar las claves subset de valores_posibles
-            valores_posibles_aux = valores_posibles.copy()
-            for key in list(subset):
-                valores_posibles_aux.pop(key)
-            atributos_a_categorizar_aux = list(set(atributos_a_categorizar) - set(list(subset)))
-            coso = NaiveBayesAIDS(30, valores_posibles_aux, atributos_a_categorizar_aux, False)
-            coso.set_params(puntos_corte=puntos_corte)
-            coso.fit(X_aux, Y_train)
-            Y_pred = coso.predict(X_validacion)
-            accuracy = accuracy_score(Y_validacion, Y_pred)
-
-            if accuracy > accuracy_max:
-                print(f'Accuracy maximo: {accuracy}')
-                accuracy_max = accuracy
-                subset_optimo = subset
-
-    print(f'Accuracy maximo: {accuracy_max}')
-    print(f'Subset optimo: {subset_optimo}')
-    '''
+    plt.show()

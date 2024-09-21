@@ -1,0 +1,5 @@
+Modelo,Accuracy,F1
+Predictor Simple,0.76,0.86
+Manual,0.8411,0.8952
+Arbol Libreria,0.86,0.90
+Random Forest,0.90,0.93

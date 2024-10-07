@@ -1,0 +1,6 @@
+gymnasium==0.29.1
+scipy==1.14.0
+numpy==1.26.4
+gymnasium[box2d]
+pygame==2.6.0 
+swig==4.2.1

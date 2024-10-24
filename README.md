@@ -10,4 +10,4 @@ Cada proyecto posee un notebook analizando el paso a paso y los resultados obten
 
 - 3 - Q-Learning: Implementación de un agente capaz de jugar `Lunar lander` mediante `Q-Learning`
 
-- 4 - Redes neuronales: ???
+- 4 - Redes Neuronales: ???

@@ -47,11 +47,30 @@ class Modelo_5_1(nn.Module):
         super().__init__()
 
         self.red = nn.Sequential(
-            nn.Linear(tamanio_entrada, 4),
-            nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(4, 2),
-            nn.Softmax(dim=1)
+            nn.Linear(tamanio_entrada, 32),
+            nn.LeakyReLU(0.01),
+            nn.Linear(32, 1),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        return self.red(x)
+    
+class Modelo_5_2(nn.Module):
+    def __init__(self, tamanio_entrada):
+        super().__init__()
+
+        self.red = nn.Sequential(
+        )
+
+    def forward(self, x):
+        return self.red(x)
+    
+class Modelo_5_3(nn.Module):
+    def __init__(self, tamanio_entrada):
+        super().__init__()
+
+        self.red = nn.Sequential(
         )
 
     def forward(self, x):

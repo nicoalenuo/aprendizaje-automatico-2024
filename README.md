@@ -10,4 +10,4 @@ Cada proyecto posee un notebook analizando el paso a paso y los resultados obten
 
 - 3 - Q-Learning: Implementación de un agente capaz de jugar `Lunar lander` mediante `Q-Learning`
 
-- 4 - Redes Neuronales: ???
+- 4 - Regresión Logística y Redes Neuronales: Predicción de muertes de pacientes por HIV mediante `Regresión Logística` y `Redes Neuronales` usando el dataset `AIDS Clinical Trials Group Study 175`.

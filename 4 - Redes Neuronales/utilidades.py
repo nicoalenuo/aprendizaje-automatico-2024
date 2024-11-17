@@ -3,6 +3,7 @@ from torch.utils.data import DataLoader, TensorDataset
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import confusion_matrix
+import numpy as np
 
 # ---- Data Loader ----
 
@@ -64,4 +65,33 @@ def plot_confusion_matrix(Y_real, Y_predicho):
     plt.xlabel('Clase predicha')
     plt.title('Matriz de confusión')
 
+    plt.show()
+
+
+def graficar_aprf(accuracys, precisions, recalls, f1s):
+    metrics = ['Accuracy', 'Precision', 'Recall', 'F1']
+    values = [accuracys, precisions, recalls, f1s]
+    
+    n_models = len(accuracys)
+    
+    x = np.arange(len(metrics))
+    width = 0.15  # Ancho de las barras
+
+    fig, ax = plt.subplots()
+
+    for i in range(n_models):
+        ax.bar(x + i * width, [values[j][i] for j in range(len(metrics))], width, label=f'Modelo {i+1}')
+
+    # Añadir etiquetas y título
+    ax.set_ylim(0, 1)
+    ax.set_xlabel('Métricas')
+    ax.set_ylabel('Valores')
+    ax.set_title('Comparación de Métricas por Modelo')
+    ax.set_xticks(x + width / 2 * (n_models - 1))
+    ax.set_xticklabels(metrics)
+
+    # Mover la leyenda a la parte superior
+    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.05), ncol=n_models)
+
+    plt.tight_layout()
     plt.show()
